@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-15]
+        os: [ubuntu-24.04, windows-2022, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     defaults:
@@ -44,6 +44,7 @@ jobs:
           src/renderer/src/runtime/runtime-host-connection-state.test.ts
           src/renderer/src/components/sidebar/ActiveServerConnectionNotice.test.tsx
           src/renderer/src/components/sidebar/Sidebar.test.tsx
+          src/renderer/src/components/status-bar/status-bar-copy-localization.test.tsx
       - name: Build isolated Electron test app
         env:
           VITE_EXPOSE_STORE: 'true'
@@ -53,9 +54,14 @@ jobs:
       - name: Two real hosts and desktop context switching
         env:
           SKIP_BUILD: '1'
-        run: >-
-          pnpm exec playwright test --config=tests/playwright.config.ts
-          tests/e2e/status-bar-active-server.spec.ts --project=electron-headless
+        run: |
+          pnpm run ensure:electron-runtime
+          display_runner=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            display_runner=(xvfb-run --auto-servernum)
+          fi
+          "${display_runner[@]}" pnpm exec playwright test --config=tests/playwright.config.ts \
+            tests/e2e/status-bar-active-server.spec.ts --project=electron-headless
       - name: Upload test evidence
         if: always()
         uses: actions/upload-artifact@v7
