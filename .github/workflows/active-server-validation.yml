@@ -1,0 +1,68 @@
+name: Active server contribution validation
+
+on:
+  push:
+    branches: [ci/active-server-validation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ORCA_BACKGROUND_LAUNCH: '1'
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/install-node-dependencies
+        with:
+          native-runtime: node
+          cache-electron-package: 'true'
+      - name: Install Electron binary
+        run: node config/scripts/install-electron-package-binary.mjs
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Active server regression tests
+        run: >-
+          pnpm test --maxWorkers=2
+          src/renderer/src/lib/active-server-workspace-selection.test.ts
+          src/renderer/src/components/status-bar/SshStatusSegment.render.test.tsx
+          src/renderer/src/components/status-bar/SshStatusSegment.test.ts
+          src/renderer/src/components/status-bar/RuntimeHostStatusRow.test.tsx
+          src/renderer/src/runtime/runtime-host-connection-state.test.ts
+          src/renderer/src/components/sidebar/ActiveServerConnectionNotice.test.tsx
+          src/renderer/src/components/sidebar/Sidebar.test.tsx
+      - name: Build isolated Electron test app
+        env:
+          VITE_EXPOSE_STORE: 'true'
+        run: |
+          pnpm run build:relay
+          pnpm run build:electron-vite --mode e2e
+      - name: Two real hosts and desktop context switching
+        env:
+          SKIP_BUILD: '1'
+        run: >-
+          pnpm exec playwright test --config=tests/playwright.config.ts
+          tests/e2e/status-bar-active-server.spec.ts --project=electron-headless
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: active-server-${{ matrix.os }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
